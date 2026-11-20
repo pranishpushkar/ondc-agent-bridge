@@ -1,0 +1,20 @@
+# secrets: never commit keys
+*.env
+.env*
+keys/
+*.pem
+
+# python
+__pycache__/
+.venv/
+
+# java (for later)
+target/
+build/
+out/
+.gradle/
+.idea/
+*.iml
+
+# os
+.DS_Store
