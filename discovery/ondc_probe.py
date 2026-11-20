@@ -10,19 +10,24 @@ The saved captures double as replay fixtures for unit tests / CI.
 
 Commands
   keygen     generate signing (Ed25519) and encryption (X25519) key pairs
-  selftest   check signing + verification locally (no network)
-  lookup     list subscribers (e.g. BPPs) from the registry
+  selftest   check signing, verification and challenge decryption locally
+  subscribe  register this buyer app with the ONDC registry (site verification,
+             /on_subscribe challenge, /subscribe call)
+  lookup     list subscribers (e.g. BPPs) from the registry (signed v2.0 lookup)
   serve      run only the callback receiver
   search     send /search via the gateway, collect on_search for N seconds
   select     send /select for one item from a captured on_search, collect on_select
   analyze    build a contract report (markdown) from the captures
 
-Requirements: Python 3.10+, `pip install cryptography`.
+Requirements: Python 3.9+, `pip install cryptography`.
 
-Before `search` / `select` work you need, on ONDC staging:
-  * a subscribed BAP (subscriber_id, unique_key_id, keys registered), and
-  * a public HTTPS URL that forwards to this script's callback port and
-    matches the subscriber_url you registered (e.g. via cloudflared/ngrok).
+Environments: --env preprod (default) or staging; or set ONDC_ENV.
+
+Before `subscribe` works you need:
+  * your subscriber_id (a domain you control) whitelisted on the ONDC portal, and
+  * a public HTTPS URL on that domain forwarding to this script's port
+    (e.g. a named Cloudflare Tunnel). The same URL then receives callbacks.
+`lookup`, `search` and `select` need a completed subscription.
 
 Not covered on purpose: /init and /confirm (they move toward a real order).
 Endpoints, codes and message shapes follow the ONDC retail 1.2.x contract as
@@ -54,14 +59,33 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import (
     Ed25519PrivateKey,
     Ed25519PublicKey,
 )
-from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey
+from cryptography.hazmat.primitives import padding
+from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey, X25519PublicKey
+from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 
 # ---------------------------------------------------------------- config ---
 
+# URLs and ONDC's encryption public keys per environment, from ONDC's
+# developer docs (github.com/ONDC-Official/developer-docs). Verify if they change.
+ENVS = {
+    "staging": {
+        "registry": "https://staging.registry.ondc.org",
+        "gateway": "https://staging.gateway.proteantech.in",
+        "subscribe_path": "/subscribe",
+        "legacy_lookup_path": "/lookup",
+        "ondc_public_key": "MCowBQYDK2VuAyEAduMuZgmtpjdCuxv+Nc49K0cB6tL/Dj3HZetvVN7ZekM=",
+    },
+    "preprod": {
+        "registry": "https://preprod.registry.ondc.org",
+        "gateway": "https://preprod.gateway.ondc.org",
+        "subscribe_path": "/ondc/subscribe",
+        "legacy_lookup_path": "/ondc/lookup",
+        "ondc_public_key": "MCowBQYDK2VuAyEAa9Wbpvd9SsrpOZFcynyt/TO3x0Yrqyys4NUGIvyxX2Q=",
+    },
+}
+
 DEFAULTS = {
-    # Staging defaults as best known; override with env vars or flags.
-    "ONDC_REGISTRY_URL": "https://staging.registry.ondc.org",
-    "ONDC_GATEWAY_URL": "https://staging.gateway.proteantech.in",
+    "ONDC_ENV": "preprod",
     "ONDC_DOMAIN": "ONDC:RET10",  # RET10 = grocery
     "ONDC_CITY": "std:080",  # Bengaluru
     "ONDC_CORE_VERSION": "1.2.0",
@@ -81,6 +105,39 @@ def require(name: str, override: str | None = None) -> str:
     if not value:
         sys.exit(f"error: {name} is not set (env var or flag)")
     return value
+
+
+def env_conf(args: argparse.Namespace) -> dict[str, str]:
+    name = cfg("ONDC_ENV", getattr(args, "env", None))
+    if name not in ENVS:
+        sys.exit(f"error: unknown environment {name!r} (use: {', '.join(ENVS)})")
+    conf = dict(ENVS[name])
+    conf["name"] = name
+    conf["registry"] = cfg("ONDC_REGISTRY_URL", getattr(args, "registry", None)) or conf["registry"]
+    conf["gateway"] = cfg("ONDC_GATEWAY_URL", getattr(args, "gateway", None)) or conf["gateway"]
+    return conf
+
+
+class Signer:
+    """This buyer app's signing identity, if configured."""
+
+    def __init__(self, key: Ed25519PrivateKey, subscriber_id: str, unique_key_id: str):
+        self.key, self.subscriber_id, self.unique_key_id = key, subscriber_id, unique_key_id
+
+    def header(self, body: bytes) -> str:
+        return auth_header(body, self.key, self.subscriber_id, self.unique_key_id)
+
+    @classmethod
+    def from_env(cls, args: argparse.Namespace, required: bool = True) -> "Signer | None":
+        names = ("ONDC_SIGNING_PRIVATE_KEY", "ONDC_SUBSCRIBER_ID", "ONDC_UNIQUE_KEY_ID")
+        values = [cfg(n, getattr(args, a, None)) for n, a in
+                  zip(names, ("private_key", "subscriber_id", "unique_key_id"))]
+        if not all(values):
+            if required:
+                missing = [n for n, v in zip(names, values) if not v]
+                sys.exit(f"error: not set: {', '.join(missing)}")
+            return None
+        return cls(load_private_key(values[0]), values[1], values[2])
 
 
 def now_iso() -> str:
@@ -178,16 +235,37 @@ def dump(obj: Any) -> bytes:
 # -------------------------------------------------------------- registry ---
 
 
+def describe(data: Any) -> str:
+    """Short, readable version of an error response (HTML pages reduced to their title)."""
+    text = data.get("raw") if isinstance(data, dict) and "raw" in data else json.dumps(data)
+    title = re.search(r"<title>(.*?)</title>", text or "", re.I | re.S)
+    return (title.group(1).strip() if title else text or "")[:300]
+
+
 class Registry:
-    def __init__(self, url: str):
-        self.url = url.rstrip("/")
+    """Registry lookups. Signed /v2.0/lookup when a signer is configured,
+    otherwise the older open lookup (which ONDC is closing)."""
+
+    def __init__(self, conf: dict[str, str], signer: Signer | None = None):
+        self.url = conf["registry"].rstrip("/")
+        self.legacy_path = conf["legacy_lookup_path"]
+        self.signer = signer
         self._keys: dict[str, str | None] = {}
         self._lock = threading.Lock()
 
     def lookup(self, query: dict[str, Any]) -> list[dict[str, Any]]:
-        status, data = http_post(f"{self.url}/lookup", dump(query), {})
+        body = dump({"country": "IND", **query})
+        if self.signer:
+            url, headers = f"{self.url}/v2.0/lookup", {"Authorization": self.signer.header(body)}
+        else:
+            url, headers = f"{self.url}{self.legacy_path}", {}
+        status, data = http_post(url, body, headers)
         if status != 200 or not isinstance(data, list):
-            raise RuntimeError(f"registry lookup failed: HTTP {status}: {str(data)[:300]}")
+            hint = ""
+            if status in (401, 403):
+                hint = (" (the registry refused this caller; lookups need a completed subscription"
+                        " and ONDC_SIGNING_PRIVATE_KEY / ONDC_SUBSCRIBER_ID / ONDC_UNIQUE_KEY_ID set)")
+            raise RuntimeError(f"registry lookup failed: HTTP {status}: {describe(data)}{hint}")
         return data
 
     def signing_key(self, subscriber_id: str, unique_key_id: str) -> str | None:
@@ -226,7 +304,7 @@ class Collector:
             payload = json.loads(body)
         except json.JSONDecodeError:
             payload = {"_unparseable": body.decode(errors="replace")}
-        ctx = payload.get("context") or {} if isinstance(payload, dict) else {}
+        ctx = (payload.get("context") or {}) if isinstance(payload, dict) else {}
         action = ctx.get("action") or path.strip("/").replace("/", "_") or "unknown"
         txn = ctx.get("transaction_id") or "no-transaction"
         bpp = ctx.get("bpp_id") or "unknown-bpp"
@@ -263,23 +341,83 @@ class Collector:
         print(f"  <- {action:<11} from {bpp}  [signature: {verification}]")
 
 
-def start_server(collector: Collector, port: int) -> ThreadingHTTPServer:
+class Subscription:
+    """Serves what ONDC checks while subscribing:
+    GET  /ondc-site-verification.html  -> request_id signed with our signing key
+    POST .../on_subscribe              -> challenge decrypted with the shared X25519 key."""
+
+    def __init__(self, signer: Signer, encryption_private_key_b64: str, ondc_public_key_b64: str):
+        self.request_id = str(uuid.uuid4())
+        signed = base64.b64encode(signer.key.sign(self.request_id.encode())).decode()
+        self.html = ("<html><head><meta name='ondc-site-verification' content='"
+                     f"{signed}' /></head><body>ONDC Site Verification Page</body></html>")
+        self.shared_key = shared_key(encryption_private_key_b64, ondc_public_key_b64)
+        self.verification_served = threading.Event()
+        self.challenge_answered = threading.Event()
+
+    def answer(self, challenge_b64: str) -> str:
+        return decrypt_challenge(challenge_b64, self.shared_key)
+
+
+def shared_key(encryption_private_key_b64: str, ondc_public_key_b64: str) -> bytes:
+    private = serialization.load_der_private_key(base64.b64decode(encryption_private_key_b64), None)
+    public = serialization.load_der_public_key(base64.b64decode(ondc_public_key_b64))
+    if not isinstance(private, X25519PrivateKey) or not isinstance(public, X25519PublicKey):
+        raise ValueError("encryption keys must be X25519 (DER, base64)")
+    return private.exchange(public)
+
+
+def decrypt_challenge(challenge_b64: str, key: bytes) -> str:
+    """ONDC encrypts the challenge with AES-256-ECB (PKCS#7) using the shared key."""
+    decryptor = Cipher(algorithms.AES(key), modes.ECB()).decryptor()  # noqa: S305 (ONDC's choice)
+    padded = decryptor.update(base64.b64decode(challenge_b64)) + decryptor.finalize()
+    unpadder = padding.PKCS7(128).unpadder()
+    return (unpadder.update(padded) + unpadder.finalize()).decode()
+
+
+def encrypt_challenge(text: str, key: bytes) -> str:
+    """Inverse of decrypt_challenge; used only by selftest."""
+    padder = padding.PKCS7(128).padder()
+    padded = padder.update(text.encode()) + padder.finalize()
+    encryptor = Cipher(algorithms.AES(key), modes.ECB()).encryptor()  # noqa: S305
+    return base64.b64encode(encryptor.update(padded) + encryptor.finalize()).decode()
+
+
+def start_server(collector: Collector | None, port: int,
+                 subscription: Subscription | None = None) -> ThreadingHTTPServer:
     class Handler(BaseHTTPRequestHandler):
+        def reply(self, status: int, body: bytes, content_type: str = "application/json") -> None:
+            self.send_response(status)
+            self.send_header("Content-Type", content_type)
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
         def do_POST(self) -> None:  # noqa: N802
             body = self.rfile.read(int(self.headers.get("Content-Length") or 0))
-            headers = {k.lower(): v for k, v in self.headers.items()}
-            collector.store(self.path, headers, body)
-            reply = dump({"message": {"ack": {"status": "ACK"}}})
-            self.send_response(200)
-            self.send_header("Content-Type", "application/json")
-            self.send_header("Content-Length", str(len(reply)))
-            self.end_headers()
-            self.wfile.write(reply)
+            if subscription and self.path.rstrip("/").endswith("/on_subscribe"):
+                try:
+                    answer = subscription.answer(json.loads(body)["challenge"])
+                except (KeyError, ValueError, json.JSONDecodeError) as err:
+                    print(f"  <- on_subscribe: could not decrypt challenge ({err})")
+                    self.reply(400, dump({"error": "bad challenge"}))
+                    return
+                print("  <- on_subscribe: challenge decrypted and answered")
+                subscription.challenge_answered.set()
+                self.reply(200, dump({"answer": answer}))
+                return
+            if collector:
+                headers = {k.lower(): v for k, v in self.headers.items()}
+                collector.store(self.path, headers, body)
+            self.reply(200, dump({"message": {"ack": {"status": "ACK"}}}))
 
-        def do_GET(self) -> None:  # noqa: N802  (health check for the tunnel)
-            self.send_response(200)
-            self.end_headers()
-            self.wfile.write(b"ondc_probe callback receiver")
+        def do_GET(self) -> None:  # noqa: N802
+            if subscription and self.path.startswith("/ondc-site-verification.html"):
+                print("  <- registry fetched /ondc-site-verification.html")
+                subscription.verification_served.set()
+                self.reply(200, subscription.html.encode(), "text/html")
+                return
+            self.reply(200, b"ondc_probe callback receiver", "text/plain")  # tunnel health check
 
         def log_message(self, *args: Any) -> None:
             pass
@@ -336,16 +474,14 @@ def search_message(args: argparse.Namespace) -> dict[str, Any]:
 
 def send_signed(args: argparse.Namespace, url: str, request: dict[str, Any]) -> None:
     body = dump(request)
-    header = auth_header(body, load_private_key(require("ONDC_SIGNING_PRIVATE_KEY", args.private_key)),
-                         require("ONDC_SUBSCRIBER_ID", args.subscriber_id),
-                         require("ONDC_UNIQUE_KEY_ID", args.unique_key_id))
+    header = Signer.from_env(args).header(body)
     ctx = request["context"]
     folder = Path(cfg("ONDC_CAPTURES", args.captures)) / safe(ctx["transaction_id"])
     folder.mkdir(parents=True, exist_ok=True)
     sent_at = now_iso()
     print(f"  -> {ctx['action']:<11} to {url}")
     status, ack = http_post(url, body, {"Authorization": header})
-    print(f"     sync response: HTTP {status} {json.dumps(ack)[:200]}")
+    print(f"     sync response: HTTP {status} {describe(ack)[:200]}")
     (folder / f"{ctx['action']}--request.json").write_text(json.dumps(
         {"_meta": {"sent_at": sent_at, "url": url, "http_status": status, "sync_response": ack},
          "payload": request}, indent=2, ensure_ascii=False))
@@ -353,7 +489,7 @@ def send_signed(args: argparse.Namespace, url: str, request: dict[str, Any]) -> 
 
 def collect(args: argparse.Namespace, url: str, request: dict[str, Any]) -> None:
     captures = Path(cfg("ONDC_CAPTURES", args.captures))
-    registry = None if args.no_verify else Registry(cfg("ONDC_REGISTRY_URL", args.registry))
+    registry = None if args.no_verify else Registry(env_conf(args), Signer.from_env(args, False))
     collector = Collector(captures, registry)
     server = start_server(collector, int(cfg("ONDC_PORT", args.port)))
     try:
@@ -372,7 +508,7 @@ def collect(args: argparse.Namespace, url: str, request: dict[str, Any]) -> None
 
 def cmd_search(args: argparse.Namespace) -> None:
     request = {"context": context(args, "search"), "message": search_message(args)}
-    collect(args, cfg("ONDC_GATEWAY_URL", args.gateway).rstrip("/") + "/search", request)
+    collect(args, env_conf(args)["gateway"].rstrip("/") + "/search", request)
 
 
 def cmd_select(args: argparse.Namespace) -> None:
@@ -402,7 +538,7 @@ def cmd_select(args: argparse.Namespace) -> None:
 
 
 def cmd_serve(args: argparse.Namespace) -> None:
-    registry = None if args.no_verify else Registry(cfg("ONDC_REGISTRY_URL", args.registry))
+    registry = None if args.no_verify else Registry(env_conf(args), Signer.from_env(args, False))
     port = int(cfg("ONDC_PORT", args.port))
     start_server(Collector(Path(cfg("ONDC_CAPTURES", args.captures)), registry), port)
     print(f"Receiving callbacks on :{port} (Ctrl-C to stop)")
@@ -414,16 +550,119 @@ def cmd_serve(args: argparse.Namespace) -> None:
 
 
 def cmd_lookup(args: argparse.Namespace) -> None:
-    query = {"country": "IND", "type": args.type, "domain": cfg("ONDC_DOMAIN", args.domain),
+    query = {"type": args.type, "domain": cfg("ONDC_DOMAIN", args.domain),
              "city": cfg("ONDC_CITY", args.city)}
-    entries = Registry(cfg("ONDC_REGISTRY_URL", args.registry)).lookup(query)
+    if args.subscriber:
+        query = {"subscriber_id": args.subscriber}
+    signer = None if args.unsigned else Signer.from_env(args, required=False)
+    if not signer and not args.unsigned:
+        print("note: signing identity not set; trying the old open lookup (likely refused)")
+    entries = Registry(env_conf(args), signer).lookup(query)
     out = Path(cfg("ONDC_CAPTURES", args.captures))
     out.mkdir(parents=True, exist_ok=True)
-    path = out / f"lookup--{args.type}--{safe(query['domain'])}--{safe(query['city'])}.json"
+    path = out / f"lookup--{safe('-'.join(str(v) for v in query.values()))}.json"
     path.write_text(json.dumps(entries, indent=2))
     for e in entries:
         print(f"{e.get('subscriber_id', '?'):<45} {e.get('status', '?'):<12} {e.get('subscriber_url', '')}")
     print(f"\n{len(entries)} entries, saved to {path}")
+
+
+SUBSCRIBE_TEMPLATE = {
+    "_note": ("Fill in your organisation's details. ops_no 1 = new buyer app registration "
+              "(check ONDC's subscribe docs for other values). This file holds PAN/GST: "
+              "keep it out of git."),
+    "ops_no": 1,
+    "entity": {
+        "gst": {"legal_entity_name": "", "business_address": "", "city_code": ["std:080"],
+                "gst_no": ""},
+        "pan": {"name_as_per_pan": "", "pan_no": "", "date_of_incorporation": "DD/MM/YYYY"},
+        "name_of_authorised_signatory": "",
+        "address_of_authorised_signatory": "",
+        "email_id": "",
+        "mobile_no": 0,
+        "country": "IND",
+    },
+    "network_participant": [
+        {"subscriber_url": "/", "domain": "ONDC:RET10", "type": "buyerApp", "msn": False,
+         "city_code": ["std:080"]},
+    ],
+}
+
+
+def public_keys(signer: Signer, encryption_private_key_b64: str) -> tuple[str, str]:
+    sign_pub = signer.key.public_key().public_bytes(serialization.Encoding.Raw,
+                                                    serialization.PublicFormat.Raw)
+    enc = serialization.load_der_private_key(base64.b64decode(encryption_private_key_b64), None)
+    enc_pub = enc.public_key().public_bytes(serialization.Encoding.DER,
+                                            serialization.PublicFormat.SubjectPublicKeyInfo)
+    return base64.b64encode(sign_pub).decode(), base64.b64encode(enc_pub).decode()
+
+
+def cmd_subscribe(args: argparse.Namespace) -> None:
+    config_path = Path(args.config)
+    if args.init_config:
+        if config_path.exists():
+            sys.exit(f"error: {config_path} already exists")
+        config_path.write_text(json.dumps(SUBSCRIBE_TEMPLATE, indent=2))
+        print(f"Wrote {config_path}. Fill it in, then run `subscribe` again.")
+        return
+    if not config_path.exists():
+        sys.exit(f"error: {config_path} not found; create it with `subscribe --init-config`")
+    config = json.loads(config_path.read_text())
+    conf = env_conf(args)
+    signer = Signer.from_env(args)
+    enc_key = require("ONDC_ENCRYPTION_PRIVATE_KEY", args.encryption_key)
+    subscription = Subscription(signer, enc_key, args.ondc_public_key or conf["ondc_public_key"])
+    sign_pub, enc_pub = public_keys(signer, enc_key)
+
+    created = datetime.now(timezone.utc)
+    valid_until = created.replace(year=created.year + 1)
+    entity = dict(config["entity"])
+    entity.update({
+        "subscriber_id": signer.subscriber_id,
+        "unique_key_id": signer.unique_key_id,
+        "callback_url": args.callback_url,
+        "key_pair": {
+            "signing_public_key": sign_pub,
+            "encryption_public_key": enc_pub,
+            "valid_from": created.isoformat(timespec="milliseconds").replace("+00:00", "Z"),
+            "valid_until": valid_until.isoformat(timespec="milliseconds").replace("+00:00", "Z"),
+        },
+    })
+    payload = {
+        "context": {"operation": {"ops_no": config.get("ops_no", 1)}},
+        "message": {
+            "request_id": subscription.request_id,
+            "timestamp": now_iso(),
+            "entity": entity,
+            "network_participant": config["network_participant"],
+        },
+    }
+
+    port = int(cfg("ONDC_PORT", args.port))
+    server = start_server(None, port, subscription)
+    url = conf["registry"].rstrip("/") + conf["subscribe_path"]
+    try:
+        print(f"Serving site verification and /on_subscribe on :{port}")
+        print(f"  -> subscribe to {url} ({conf['name']})")
+        status, response = http_post(url, dump(payload), {}, timeout=60)
+        print(f"     response: HTTP {status} {describe(response)[:300]}")
+        if status == 200 and not subscription.challenge_answered.is_set():
+            print(f"  waiting up to {args.wait}s for the registry's challenge...")
+            subscription.challenge_answered.wait(args.wait)
+    finally:
+        server.shutdown()
+
+    print()
+    print(f"site verification fetched: {'yes' if subscription.verification_served.is_set() else 'no'}")
+    print(f"challenge answered:        {'yes' if subscription.challenge_answered.is_set() else 'no'}")
+    if status == 200 and subscription.challenge_answered.is_set():
+        print("Subscribed. Check with: python3 ondc_probe.py lookup --subscriber "
+              f"{signer.subscriber_id}")
+    else:
+        print("Not subscribed yet. Check that the subscriber_id is whitelisted for this "
+              "environment and that https://<subscriber_id>/ reaches this port.")
+        sys.exit(1)
 
 
 def cmd_keygen(_: argparse.Namespace) -> None:
@@ -440,7 +679,7 @@ def cmd_keygen(_: argparse.Namespace) -> None:
     print("# Keep the private keys secret. Register the public keys when subscribing.")
     print(f"ONDC_SIGNING_PRIVATE_KEY={b64(seed + sign_pub)}")
     print(f"signing_public_key={b64(sign_pub)}")
-    print(f"encryption_private_key={b64(enc_priv)}")
+    print(f"ONDC_ENCRYPTION_PRIVATE_KEY={b64(enc_priv)}")
     print(f"encryption_public_key={b64(enc_pub)}")
 
 
@@ -458,6 +697,21 @@ def cmd_selftest(_: argparse.Namespace) -> None:
             key.private_bytes(serialization.Encoding.Raw, serialization.PrivateFormat.Raw,
                               serialization.NoEncryption()) + b"\0" * 32).decode()) is not None),
     ]
+    # Subscribe challenge: simulate ONDC encrypting with its key and ours.
+    ours, theirs = X25519PrivateKey.generate(), X25519PrivateKey.generate()
+    der = lambda k: base64.b64encode(k.private_bytes(  # noqa: E731
+        serialization.Encoding.DER, serialization.PrivateFormat.PKCS8,
+        serialization.NoEncryption())).decode()
+    pub_der = lambda k: base64.b64encode(k.public_key().public_bytes(  # noqa: E731
+        serialization.Encoding.DER, serialization.PublicFormat.SubjectPublicKeyInfo)).decode()
+    challenge = encrypt_challenge("challenge-text-123", shared_key(der(theirs), pub_der(ours)))
+    checks.append(("subscribe challenge decrypts",
+                   decrypt_challenge(challenge, shared_key(der(ours), pub_der(theirs)))
+                   == "challenge-text-123"))
+    for env_name, env in ENVS.items():
+        checks.append((f"ONDC {env_name} public key loads",
+                       isinstance(serialization.load_der_public_key(
+                           base64.b64decode(env["ondc_public_key"])), X25519PublicKey)))
     for name, ok in checks:
         print(f"{'PASS' if ok else 'FAIL'}  {name}")
     sys.exit(0 if all(ok for _, ok in checks) else 1)
@@ -574,17 +828,21 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     sub = parser.add_subparsers(dest="command", required=True)
 
+    def identity(p: argparse.ArgumentParser) -> None:
+        p.add_argument("--subscriber-id")
+        p.add_argument("--unique-key-id")
+        p.add_argument("--private-key", help="base64 Ed25519 signing key (prefer the env var)")
+
     def common(p: argparse.ArgumentParser) -> None:
+        p.add_argument("--env", choices=sorted(ENVS), help="ONDC environment (default preprod)")
         p.add_argument("--captures", help="captures folder (default ./captures)")
-        p.add_argument("--registry", help="registry base URL")
+        p.add_argument("--registry", help="registry base URL (overrides --env)")
         p.add_argument("--domain", help="e.g. ONDC:RET10")
         p.add_argument("--city", help="e.g. std:080")
 
     def network(p: argparse.ArgumentParser) -> None:
         common(p)
-        p.add_argument("--subscriber-id")
-        p.add_argument("--unique-key-id")
-        p.add_argument("--private-key", help="base64 Ed25519 signing key (prefer the env var)")
+        identity(p)
         p.add_argument("--bap-uri", help="your public callback URL")
         p.add_argument("--port", help="local callback port (default 8090)")
         p.add_argument("--wait", type=int, default=20, help="seconds to collect callbacks")
@@ -594,7 +852,7 @@ def main() -> None:
 
     p = sub.add_parser("search", help="send /search, collect on_search")
     network(p)
-    p.add_argument("--gateway", help="gateway base URL")
+    p.add_argument("--gateway", help="gateway base URL (overrides --env)")
     p.add_argument("--query", default="milk", help="item name to search for")
     p.add_argument("--category", help="category id instead of / as well as a query")
     p.add_argument("--finder-fee", default="3", help="buyer app finder fee, percent")
@@ -610,24 +868,46 @@ def main() -> None:
 
     p = sub.add_parser("serve", help="run only the callback receiver")
     common(p)
+    identity(p)
     p.add_argument("--port")
     p.add_argument("--no-verify", action="store_true")
     p.set_defaults(func=cmd_serve)
 
     p = sub.add_parser("lookup", help="list registry subscribers")
     common(p)
+    identity(p)
     p.add_argument("--type", default="BPP", choices=["BPP", "BAP", "BG"])
+    p.add_argument("--subscriber", help="look up one subscriber_id instead")
+    p.add_argument("--unsigned", action="store_true", help="use the old open lookup")
     p.set_defaults(func=cmd_lookup)
+
+    p = sub.add_parser("subscribe", help="register this buyer app with the registry")
+    common(p)
+    identity(p)
+    p.add_argument("--config", default="subscribe-config.json",
+                   help="your organisation details (create with --init-config)")
+    p.add_argument("--init-config", action="store_true", help="write a template config and stop")
+    p.add_argument("--encryption-key", help="base64 X25519 key (prefer ONDC_ENCRYPTION_PRIVATE_KEY)")
+    p.add_argument("--callback-url", default="/", help="path under your domain (default /)")
+    p.add_argument("--port", help="local port behind your tunnel (default 8090)")
+    p.add_argument("--wait", type=int, default=60, help="seconds to wait for the challenge")
+    p.add_argument("--ondc-public-key", help=argparse.SUPPRESS)  # testing only
+    p.set_defaults(func=cmd_subscribe)
 
     p = sub.add_parser("analyze", help="write a contract report from captures")
     p.add_argument("--captures")
     p.set_defaults(func=cmd_analyze)
 
     sub.add_parser("keygen", help="generate key pairs").set_defaults(func=cmd_keygen)
-    sub.add_parser("selftest", help="local signing check").set_defaults(func=cmd_selftest)
+    sub.add_parser("selftest", help="local checks, no network").set_defaults(func=cmd_selftest)
 
     args = parser.parse_args()
-    args.func(args)
+    try:
+        args.func(args)
+    except KeyboardInterrupt:
+        sys.exit(130)
+    except (RuntimeError, ValueError, OSError, KeyError) as err:
+        sys.exit(f"error: {err}")
 
 
 if __name__ == "__main__":

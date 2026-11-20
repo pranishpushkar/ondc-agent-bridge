@@ -18,3 +18,6 @@ out/
 
 # os
 .DS_Store
+
+# ONDC subscribe config (holds PAN/GST details)
+subscribe-config*.json
