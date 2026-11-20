@@ -1,0 +1,53 @@
+{
+  "_meta": {
+    "sent_at": "2026-11-20T19:40:43.574Z",
+    "url": "https://preprod.gateway.ondc.org/search",
+    "http_status": 200,
+    "sync_response": {
+      "message": {
+        "ack": {
+          "status": "ACK"
+        }
+      }
+    }
+  },
+  "payload": {
+    "context": {
+      "domain": "ONDC:RET10",
+      "action": "search",
+      "country": "IND",
+      "city": "std:040",
+      "core_version": "1.2.0",
+      "bap_id": "ondc.pranishpushkar.com",
+      "bap_uri": "https://ondc.pranishpushkar.com",
+      "transaction_id": "5caabe5d-1f05-482d-8c62-7d2df377abf0",
+      "message_id": "10dcf118-cf56-467b-807f-eac7c02588f0",
+      "timestamp": "2026-11-20T19:40:43.562Z",
+      "ttl": "PT30S"
+    },
+    "message": {
+      "intent": {
+        "fulfillment": {
+          "type": "Delivery",
+          "end": {
+            "location": {
+              "gps": "17.4065,78.4772",
+              "address": {
+                "area_code": "500001"
+              }
+            }
+          }
+        },
+        "payment": {
+          "@ondc/org/buyer_app_finder_fee_type": "percent",
+          "@ondc/org/buyer_app_finder_fee_amount": "3"
+        },
+        "item": {
+          "descriptor": {
+            "name": "rice"
+          }
+        }
+      }
+    }
+  }
+}
