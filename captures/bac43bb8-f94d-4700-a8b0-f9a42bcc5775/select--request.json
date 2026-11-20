@@ -1,0 +1,78 @@
+{
+  "_meta": {
+    "sent_at": "2026-11-20T19:38:35.118Z",
+    "url": "https://stageapi.lekhha.com/sellerApp1/select",
+    "http_status": 200,
+    "sync_response": {
+      "context": {
+        "domain": "ONDC:RET10",
+        "action": "select",
+        "country": "IND",
+        "city": "std:080",
+        "core_version": "1.2.0",
+        "bap_id": "ondc.pranishpushkar.com",
+        "bap_uri": "https://ondc.pranishpushkar.com",
+        "transaction_id": "bac43bb8-f94d-4700-a8b0-f9a42bcc5775",
+        "message_id": "330560a0-2b41-4ece-b4b4-cfdb44ff8f5c",
+        "timestamp": "2026-11-20T19:38:35.545Z",
+        "bpp_id": "stageapi.lekhha.com",
+        "bpp_uri": "https://stageapi.lekhha.com/sellerApp1"
+      },
+      "message": {
+        "ack": {
+          "status": "ACK"
+        }
+      }
+    }
+  },
+  "payload": {
+    "context": {
+      "domain": "ONDC:RET10",
+      "action": "select",
+      "country": "IND",
+      "city": "std:080",
+      "core_version": "1.2.0",
+      "bap_id": "ondc.pranishpushkar.com",
+      "bap_uri": "https://ondc.pranishpushkar.com",
+      "transaction_id": "bac43bb8-f94d-4700-a8b0-f9a42bcc5775",
+      "message_id": "330560a0-2b41-4ece-b4b4-cfdb44ff8f5c",
+      "timestamp": "2026-11-20T19:38:35.107Z",
+      "ttl": "PT30S",
+      "bpp_id": "stageapi.lekhha.com",
+      "bpp_uri": "https://stageapi.lekhha.com/sellerApp1"
+    },
+    "message": {
+      "order": {
+        "provider": {
+          "id": "674ecb33d7b9e10f4210d972",
+          "locations": [
+            {
+              "id": "674ecbc6d7b9e10f4210d973"
+            }
+          ]
+        },
+        "items": [
+          {
+            "id": "676a5f87cac4860876a8e2ff",
+            "location_id": "674ecbc6d7b9e10f4210d973",
+            "quantity": {
+              "count": 2
+            }
+          }
+        ],
+        "fulfillments": [
+          {
+            "end": {
+              "location": {
+                "gps": "12.9352,77.6245",
+                "address": {
+                  "area_code": "560034"
+                }
+              }
+            }
+          }
+        ]
+      }
+    }
+  }
+}
