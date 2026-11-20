@@ -1,0 +1,127 @@
+{
+  "_meta": {
+    "received_at": "2026-11-20T19:59:58.867Z",
+    "path": "/on_select",
+    "action": "on_select",
+    "bpp_id": "ondcseller-staging.costbo.com",
+    "signature": "ok",
+    "content_encoding": null,
+    "headers": {
+      "user-agent": "Jetty/11.0.15",
+      "authorization": "Signature keyId=\"ondcseller-staging.costbo.com|96cbcc48-6241-4f38-ad4c-2a67e05a3f89|ed25519\",algorithm=\"ed25519\",created=\"1795204798\",expires=\"1795205398\",headers=\"(created) (expires) digest\",signature=\"tLqFZ3Xx/dqCfzww2VccG+sdFno6H0H4iPnXNxOvmu+7K3VqzfdLPwFP5pQ76yxq9FQm2J/6LdfiIuOe4W+/Dg==\"",
+      "content-type": "application/json"
+    }
+  },
+  "payload": {
+    "context": {
+      "domain": "ONDC:RET10",
+      "country": "IND",
+      "city": "std:080",
+      "action": "on_select",
+      "core_version": "1.2.0",
+      "bap_id": "ondc.pranishpushkar.com",
+      "bap_uri": "https://ondc.pranishpushkar.com",
+      "bpp_id": "ondcseller-staging.costbo.com",
+      "bpp_uri": "https://ondcseller-staging.costbo.com/ondc/v1/seller",
+      "transaction_id": "4b90e113-b32d-4bb8-9f11-9efaead46688",
+      "message_id": "c46ad6e6-11ae-4573-9d04-4691422a8679",
+      "timestamp": "2026-11-20T19:59:58.053Z",
+      "ttl": "PT30S"
+    },
+    "message": {
+      "order": {
+        "provider": {
+          "id": "7bf9b561199f4a898b3f8a3cef91b6e6",
+          "locations": [
+            {
+              "id": "7bf9b561199f4a898b3f8a3cef91b6e6-loc1"
+            }
+          ]
+        },
+        "items": [
+          {
+            "id": "59a614d4813647b989ce4ea5c63e6cd3",
+            "fulfillment_id": "F1"
+          }
+        ],
+        "fulfillments": [
+          {
+            "id": "F1",
+            "@ondc/org/provider_name": "Himachal Factory",
+            "tracking": false,
+            "@ondc/org/category": "Standard Delivery",
+            "@ondc/org/TAT": "P5DT4H40M",
+            "state": {
+              "descriptor": {
+                "code": "Serviceable"
+              }
+            },
+            "type": "Delivery"
+          }
+        ],
+        "quote": {
+          "ttl": "P1D",
+          "price": {
+            "currency": "INR",
+            "value": "280.0"
+          },
+          "breakup": [
+            {
+              "@ondc/org/item_id": "59a614d4813647b989ce4ea5c63e6cd3",
+              "title": "very Berry  jam - 100 Gram",
+              "@ondc/org/title_type": "item",
+              "price": {
+                "currency": "INR",
+                "value": "80.0"
+              },
+              "@ondc/org/item_quantity": {
+                "count": 1
+              },
+              "item": {
+                "quantity": {
+                  "available": {
+                    "count": "99"
+                  },
+                  "maximum": {
+                    "count": "99"
+                  }
+                },
+                "price": {
+                  "currency": "INR",
+                  "value": "80.0"
+                }
+              }
+            },
+            {
+              "@ondc/org/item_id": "F1",
+              "title": "Delivery charges",
+              "@ondc/org/title_type": "delivery",
+              "price": {
+                "currency": "INR",
+                "value": "0.0"
+              }
+            },
+            {
+              "@ondc/org/item_id": "F1",
+              "title": "Convenience Fee",
+              "@ondc/org/title_type": "misc",
+              "price": {
+                "currency": "INR",
+                "value": "100.0"
+              }
+            },
+            {
+              "@ondc/org/item_id": "F1",
+              "title": "Packing charges",
+              "@ondc/org/title_type": "packing",
+              "price": {
+                "currency": "INR",
+                "value": "100.0"
+              }
+            }
+          ]
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,195 @@
+{
+  "_meta": {
+    "received_at": "2026-11-20T20:05:26.550Z",
+    "path": "/on_init",
+    "action": "on_init",
+    "bpp_id": "ondcseller-staging.costbo.com",
+    "signature": "ok",
+    "content_encoding": null,
+    "headers": {
+      "user-agent": "Jetty/11.0.15",
+      "authorization": "Signature keyId=\"ondcseller-staging.costbo.com|96cbcc48-6241-4f38-ad4c-2a67e05a3f89|ed25519\",algorithm=\"ed25519\",created=\"1795205125\",expires=\"1795205725\",headers=\"(created) (expires) digest\",signature=\"X74jkYLMMddGRopHHoQ1OrRDyohH0bfyWvCPW0CV3dj7JC8e9pORM1yDF3gj2nP8necIiSTeqjmMfv8By214Bg==\"",
+      "content-type": "application/json"
+    }
+  },
+  "payload": {
+    "context": {
+      "domain": "ONDC:RET10",
+      "country": "IND",
+      "city": "std:080",
+      "action": "on_init",
+      "core_version": "1.2.0",
+      "bap_id": "ondc.pranishpushkar.com",
+      "bap_uri": "https://ondc.pranishpushkar.com",
+      "bpp_id": "ondcseller-staging.costbo.com",
+      "bpp_uri": "https://ondcseller-staging.costbo.com/ondc/v1/seller",
+      "transaction_id": "4b90e113-b32d-4bb8-9f11-9efaead46688",
+      "message_id": "d1c2cfea-248c-45dd-bccf-40c139f2d412",
+      "timestamp": "2026-11-20T20:05:25.730Z",
+      "ttl": "PT30S"
+    },
+    "message": {
+      "order": {
+        "provider": {
+          "id": "7bf9b561199f4a898b3f8a3cef91b6e6",
+          "locations": [
+            {
+              "id": "7bf9b561199f4a898b3f8a3cef91b6e6-loc1"
+            }
+          ]
+        },
+        "items": [
+          {
+            "id": "59a614d4813647b989ce4ea5c63e6cd3",
+            "quantity": {
+              "count": 1
+            },
+            "fulfillment_id": "F1"
+          }
+        ],
+        "fulfillments": [
+          {
+            "id": "F1",
+            "type": "Delivery",
+            "tracking": false,
+            "end": {
+              "location": {
+                "gps": "12.9352,77.6245",
+                "address": {
+                  "name": "Flat 101",
+                  "country": "IND",
+                  "locality": "Koramangala",
+                  "building": "Test Building",
+                  "city": "Bengaluru",
+                  "area_code": "560034",
+                  "state": "Karnataka"
+                }
+              },
+              "contact": {
+                "phone": "9886098860"
+              }
+            }
+          }
+        ],
+        "quote": {
+          "ttl": "P1D",
+          "price": {
+            "currency": "INR",
+            "value": "280.0"
+          },
+          "breakup": [
+            {
+              "@ondc/org/item_id": "59a614d4813647b989ce4ea5c63e6cd3",
+              "title": "very Berry  jam - 100 Gram",
+              "@ondc/org/title_type": "item",
+              "price": {
+                "currency": "INR",
+                "value": "80.0"
+              },
+              "@ondc/org/item_quantity": {
+                "count": 1
+              },
+              "item": {
+                "price": {
+                  "currency": "INR",
+                  "value": "80.0"
+                }
+              }
+            },
+            {
+              "@ondc/org/item_id": "F1",
+              "title": "Delivery charges",
+              "@ondc/org/title_type": "delivery",
+              "price": {
+                "currency": "INR",
+                "value": "0.0"
+              }
+            },
+            {
+              "@ondc/org/item_id": "F1",
+              "title": "Convenience Fee",
+              "@ondc/org/title_type": "misc",
+              "price": {
+                "currency": "INR",
+                "value": "100.0"
+              }
+            },
+            {
+              "@ondc/org/item_id": "F1",
+              "title": "Packing charges",
+              "@ondc/org/title_type": "packing",
+              "price": {
+                "currency": "INR",
+                "value": "100.0"
+              }
+            }
+          ]
+        },
+        "billing": {
+          "address": {
+            "name": "Flat 101",
+            "country": "IND",
+            "locality": "Koramangala",
+            "building": "Test Building",
+            "city": "Bengaluru",
+            "area_code": "560034",
+            "state": "Karnataka"
+          },
+          "phone": "9886098860",
+          "name": "Test Buyer",
+          "email": "nobody@nomail.com",
+          "created_at": "2026-11-20T20:05:24.313Z",
+          "updated_at": "2026-11-20T20:05:24.313Z"
+        },
+        "payment": {
+          "@ondc/org/buyer_app_finder_fee_type": "percent",
+          "@ondc/org/buyer_app_finder_fee_amount": "3.0",
+          "@ondc/org/settlement_details": [
+            {
+              "settlement_counterparty": "seller-app",
+              "settlement_phase": "sale-amount",
+              "settlement_type": "neft",
+              "beneficiary_name": "costbo services private limited",
+              "settlement_bank_account_no": "50200024950556",
+              "settlement_ifsc_code": "HDFC0000523",
+              "bank_name": "HDFC Bank",
+              "branch_name": "Richmond Road",
+              "upi_address": ""
+            }
+          ]
+        },
+        "tags": [
+          {
+            "code": "bpp_terms",
+            "list": [
+              {
+                "code": "tax_number",
+                "value": "29AAGCC6260P1Z1"
+              },
+              {
+                "code": "provider_tax_number",
+                "value": "AAECB8977F"
+              }
+            ]
+          }
+        ],
+        "cancellation_terms": [
+          {
+            "fulfillment_state": {
+              "descriptor": {
+                "code": "*",
+                "short_desc": "006"
+              }
+            },
+            "cancellation_fee": {
+              "amount": {
+                "currency": "INR",
+                "value": "50"
+              }
+            }
+          }
+        ]
+      }
+    }
+  }
+}

@@ -119,17 +119,51 @@ Seller terms (`bpp_terms` tags): `np_type` MSN, `collect_payment` **N**, `max_li
 - The breakup's title types map onto UCP checkout totals (subtotal, tax, discount, fulfillment, fees). This mapping is the core translation.
 - `collect_payment: N` means the **buyer app collects payment** and settles with the seller later. Payment collection and settlement are the bridge's responsibility, which needs a decision early.
 
-## 7. Open questions
+## 7. Final terms (`init` / `on_init`): the payment model
+
+`init` sends billing and delivery details and asks for final terms. It places no order (only `confirm` does).
+
+**What made `init` work** (all three sellers silently dropped our first attempts after ACKing):
+
+- No `payment` block in `init`. ONDC's official RET10 example has none; the seller proposes terms in `on_init`.
+- Every item must carry `quantity.count`. Some sellers omit quantity from `on_select` items (it appears only in the breakup, or nowhere), so the buyer app must carry it from its own `select`.
+- Test buyer details in a realistic shape (ONDC's sample values).
+
+After these fixes: **OrderBazaar and Costbo returned `on_init`; Lekhha never did** (silent on every attempt, including a fresh transaction). ACK means "received", not "accepted".
+
+**Terms received:**
+
+| | OrderBazaar | Costbo |
+|---|---|---|
+| `collected_by` | not stated | not stated |
+| Payment type / status | `ON-ORDER` / `NOT-PAID` | not stated |
+| Settlement basis / window | delivery / `P1D` | not stated |
+| Withholding | ₹10.00 | not stated |
+| Buyer-app finder fee | not stated | 3% (echoed our search offer) |
+| Seller settlement account | NEFT, bank account + IFSC | NEFT, bank account + IFSC |
+| Cancellation terms | none | ₹50 at any fulfilment state |
+| Quote | ₹62 (item ₹62, delivery ₹0) | ₹280 (item ₹80 + convenience ₹100 + packing ₹100) |
+
+**Conclusion on the payment model:** neither seller offers a payment link (`uri`), and both send their bank account for settlement as the `seller-app` counterparty. That is the buyer-app-collects model: **the bridge collects the buyer's money (prepaid, `ON-ORDER`), keeps its finder fee, and pays the seller within the settlement window after delivery**, minus any withholding. Combined with Lekhha's `collect_payment: N` (§6), all three live sellers expect the buyer app to collect.
+
+**For the bridge:**
+- Payment collection, holding funds through the settlement window, payouts to sellers' bank accounts, reconciliation and refunds are the bridge's job. This is the biggest scope and compliance decision in the project.
+- Don't assume optional fields: `collected_by`, settlement window and cancellation terms were each missing from at least one seller. Fill gaps with network defaults and treat missing terms as a risk to show the user.
+- Fees can dwarf the item: Costbo's ₹80 jam costs ₹280. The bridge should show agents the full landed cost and enforce budgets on the `on_init` total.
+- `on_init` contains sellers' real bank details. Captures must stay in a private repo.
+
+## 8. Open questions
 
 1. Who sends the gzip `on_search` callbacks: the sellers themselves or a shared relay?
 2. Do ONDC's own test sellers (`seller-app-preprod-v2.ondc.org`, `pramaan.ondc.org`) answer searches, and with cleaner data?
 3. How stable is the response rate across times of day and queries (atta, rice, category searches)?
-4. What do `init` and `confirm` require, and what does settlement look like when the buyer app collects payment? (Not probed: these move toward a real order.)
-5. Should the bridge register as an MSN-aware buyer app, given most live sellers are multi-store platforms?
+4. Why does Lekhha never answer `init`? (Seller-side issue, or a field only it requires.)
+5. What does `confirm` require, and how does payment proof travel (`payment.status` PAID, transaction id)? Not probed: it places a real order.
+6. Should the bridge register as an MSN-aware buyer app, given most live sellers are multi-store platforms?
 
-## 8. Suggested next steps
+## 9. Suggested next steps
 
 - Repeat searches at different times and with several queries to measure the response rate properly.
 - Probe ONDC's reference seller and Pramaan mocks directly.
 - Draft the shared internal model (`Offer`, `Quote`, `QuoteLine`, `Store`, `Serviceability`) from §5 and §6.
-- Decide the payment model (§6) before designing checkout.
+- Decide how the bridge will collect and settle payments (§7) before designing checkout.

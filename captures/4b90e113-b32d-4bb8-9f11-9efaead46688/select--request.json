@@ -1,0 +1,79 @@
+{
+  "_meta": {
+    "sent_at": "2026-11-20T20:00:13.578Z",
+    "url": "https://sellerpreprod.orderbazaar.in/protocol/v1/select",
+    "http_status": 200,
+    "sync_response": {
+      "context": {
+        "domain": "ONDC:RET10",
+        "action": "select",
+        "country": "IND",
+        "city": "std:080",
+        "core_version": "1.2.0",
+        "bap_id": "ondc.pranishpushkar.com",
+        "bap_uri": "https://ondc.pranishpushkar.com",
+        "transaction_id": "4b90e113-b32d-4bb8-9f11-9efaead46688",
+        "message_id": "00b783aa-e889-41ac-8e70-dafd2915be1c",
+        "timestamp": "2026-11-20T20:00:13.935Z",
+        "ttl": "PT30S",
+        "bpp_id": "sellerpreprod.orderbazaar.in",
+        "bpp_uri": "https://sellerpreprod.orderbazaar.in/protocol/v1"
+      },
+      "message": {
+        "ack": {
+          "status": "ACK"
+        }
+      }
+    }
+  },
+  "payload": {
+    "context": {
+      "domain": "ONDC:RET10",
+      "action": "select",
+      "country": "IND",
+      "city": "std:080",
+      "core_version": "1.2.0",
+      "bap_id": "ondc.pranishpushkar.com",
+      "bap_uri": "https://ondc.pranishpushkar.com",
+      "transaction_id": "4b90e113-b32d-4bb8-9f11-9efaead46688",
+      "message_id": "00b783aa-e889-41ac-8e70-dafd2915be1c",
+      "timestamp": "2026-11-20T20:00:13.569Z",
+      "ttl": "PT30S",
+      "bpp_id": "sellerpreprod.orderbazaar.in",
+      "bpp_uri": "https://sellerpreprod.orderbazaar.in/protocol/v1"
+    },
+    "message": {
+      "order": {
+        "provider": {
+          "id": "a908d9928fa94333ba3dc7ce029bf264",
+          "locations": [
+            {
+              "id": "6ab417be8e474619692c0713"
+            }
+          ]
+        },
+        "items": [
+          {
+            "id": "30b69c3bcb1b4aaea2aa8d38e59daf3b",
+            "location_id": "6ab417be8e474619692c0713",
+            "quantity": {
+              "count": 1
+            }
+          }
+        ],
+        "fulfillments": [
+          {
+            "end": {
+              "location": {
+                "gps": "12.9352,77.6245",
+                "address": {
+                  "area_code": "560034"
+                }
+              }
+            }
+          }
+        ]
+      }
+    }
+  }
+}

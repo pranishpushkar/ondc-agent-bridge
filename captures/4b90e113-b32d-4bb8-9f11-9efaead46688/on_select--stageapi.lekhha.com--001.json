@@ -1,0 +1,310 @@
+{
+  "_meta": {
+    "received_at": "2026-11-20T19:57:47.513Z",
+    "path": "/on_select",
+    "action": "on_select",
+    "bpp_id": "stageapi.lekhha.com",
+    "signature": "ok",
+    "content_encoding": null,
+    "headers": {
+      "user-agent": "axios/1.7.7",
+      "authorization": "Signature keyId=\"stageapi.lekhha.com|7b0d91cf-7cbb-4bbb-a652-4721f0ee55de|ed25519\",algorithm=\"ed25519\",created=\"1795204667\",expires=\"1795208267\",headers=\"(created) (expires) digest\",signature=\"mirjdG2ToXbnucfog6/JvD/rBoOumuCmB7WnpdU06SqhSZpgoMwRDd8zo5cfo8BbCvtF8w5eowj59lnB4+laDg==\"",
+      "content-type": "application/json"
+    }
+  },
+  "payload": {
+    "context": {
+      "domain": "ONDC:RET10",
+      "action": "on_select",
+      "country": "IND",
+      "city": "std:080",
+      "core_version": "1.2.0",
+      "bap_id": "ondc.pranishpushkar.com",
+      "bap_uri": "https://ondc.pranishpushkar.com",
+      "transaction_id": "4b90e113-b32d-4bb8-9f11-9efaead46688",
+      "message_id": "088fc4ca-959e-4d18-95f0-cb8d32b0f69f",
+      "timestamp": "2026-11-20T19:57:47.323Z",
+      "bpp_id": "stageapi.lekhha.com",
+      "bpp_uri": "https://stageapi.lekhha.com/sellerApp1"
+    },
+    "message": {
+      "order": {
+        "provider": {
+          "id": "674ecb33d7b9e10f4210d972",
+          "locations": [
+            {
+              "id": "674ecbc6d7b9e10f4210d973"
+            }
+          ]
+        },
+        "items": [
+          {
+            "fulfillment_ids": [
+              "1"
+            ],
+            "id": "676a5f87cac4860876a8e2ff",
+            "quantity": {
+              "count": 2
+            },
+            "fulfillment_id": "1"
+          }
+        ],
+        "fulfillments": [
+          {
+            "id": "1",
+            "type": "Delivery",
+            "@ondc/org/provider_name": "Lekhha Provider A",
+            "tracking": false,
+            "@ondc/org/TAT": "P0DT0H15M",
+            "state": {
+              "descriptor": {
+                "code": "Serviceable"
+              }
+            },
+            "contact": {
+              "phone": "9900025784",
+              "email": "sgupta.scm@gmail.com"
+            },
+            "start": {
+              "location": {
+                "id": "674ecbc6d7b9e10f4210d973",
+                "descriptor": {
+                  "name": "Lekhha_Seller_1 legal"
+                },
+                "gps": "12.9263841,77.6654374",
+                "address": {
+                  "name": "Lekhha_Seller_1",
+                  "building": "WMG8+H5, SUNCITY APARTMENT-1",
+                  "locality": "Bengaluru",
+                  "street": "",
+                  "city": "Bengaluru",
+                  "state": "Karnataka",
+                  "country": "IND",
+                  "area_code": "560105"
+                }
+              },
+              "contact": {
+                "email": "Lekhha_Seller_1@email1.com",
+                "phone": "9900025784"
+              }
+            },
+            "end": {
+              "location": {
+                "gps": "12.9352,77.6245",
+                "address": {
+                  "area_code": "560034"
+                }
+              }
+            },
+            "@ondc/org/category": "Immediate Delivery"
+          }
+        ],
+        "quote": {
+          "price": {
+            "currency": "INR",
+            "value": "308.28"
+          },
+          "breakup": [
+            {
+              "@ondc/org/item_id": "676a5f87cac4860876a8e2ff",
+              "@ondc/org/item_quantity": {
+                "count": 2
+              },
+              "title": "Butter",
+              "@ondc/org/title_type": "item",
+              "price": {
+                "currency": "INR",
+                "value": "220.00"
+              },
+              "item": {
+                "quantity": {
+                  "available": {
+                    "count": "99"
+                  },
+                  "maximum": {
+                    "count": "23"
+                  }
+                },
+                "price": {
+                  "currency": "INR",
+                  "value": "110.00"
+                }
+              }
+            },
+            {
+              "@ondc/org/item_id": "676a5f87cac4860876a8e2ff",
+              "title": "Tax",
+              "@ondc/org/title_type": "tax",
+              "price": {
+                "currency": "INR",
+                "value": "28.60"
+              }
+            },
+            {
+              "@ondc/org/item_id": "676a5f87cac4860876a8e2ff",
+              "title": "Discount",
+              "@ondc/org/title_type": "discount",
+              "price": {
+                "currency": "INR",
+                "value": "-29.84"
+              }
+            },
+            {
+              "@ondc/org/item_id": "1",
+              "title": "Delivery charges",
+              "@ondc/org/title_type": "delivery",
+              "price": {
+                "currency": "INR",
+                "value": "44.00"
+              }
+            },
+            {
+              "@ondc/org/item_id": "1",
+              "title": "Tax",
+              "@ondc/org/title_type": "tax",
+              "price": {
+                "currency": "INR",
+                "value": "4.84"
+              },
+              "item": {
+                "tags": [
+                  {
+                    "code": "quote",
+                    "list": [
+                      {
+                        "code": "type",
+                        "value": "fulfillment"
+                      },
+                      {
+                        "code": "subtype",
+                        "value": "delivery"
+                      }
+                    ]
+                  }
+                ]
+              }
+            },
+            {
+              "@ondc/org/item_id": "1",
+              "title": "Packing charges",
+              "@ondc/org/title_type": "packing",
+              "price": {
+                "currency": "INR",
+                "value": "33.00"
+              }
+            },
+            {
+              "@ondc/org/item_id": "1",
+              "title": "Tax",
+              "@ondc/org/title_type": "tax",
+              "price": {
+                "currency": "INR",
+                "value": "3.30"
+              },
+              "item": {
+                "tags": [
+                  {
+                    "code": "quote",
+                    "list": [
+                      {
+                        "code": "type",
+                        "value": "fulfillment"
+                      },
+                      {
+                        "code": "subtype",
+                        "value": "packaging"
+                      }
+                    ]
+                  }
+                ]
+              }
+            },
+            {
+              "@ondc/org/item_id": "1",
+              "title": "Convenience Fee",
+              "@ondc/org/title_type": "misc",
+              "price": {
+                "currency": "INR",
+                "value": "3.71"
+              }
+            },
+            {
+              "@ondc/org/item_id": "1",
+              "title": "Tax",
+              "@ondc/org/title_type": "tax",
+              "price": {
+                "currency": "INR",
+                "value": "0.67"
+              },
+              "item": {
+                "tags": [
+                  {
+                    "code": "quote",
+                    "list": [
+                      {
+                        "code": "type",
+                        "value": "fulfillment"
+                      },
+                      {
+                        "code": "subtype",
+                        "value": "misc"
+                      }
+                    ]
+                  }
+                ]
+              }
+            }
+          ],
+          "ttl": "P1D"
+        },
+        "tags": [
+          {
+            "code": "bpp_terms",
+            "list": [
+              {
+                "code": "np_type",
+                "value": "MSN"
+              },
+              {
+                "code": "collect_payment",
+                "value": "N"
+              },
+              {
+                "code": "max_liability",
+                "value": "2"
+              },
+              {
+                "code": "max_liability_cap",
+                "value": "10000"
+              },
+              {
+                "code": "mandatory_arbitration",
+                "value": "false"
+              },
+              {
+                "code": "court_jurisdiction",
+                "value": "Bengaluru"
+              },
+              {
+                "code": "delay_interest",
+                "value": "7"
+              },
+              {
+                "code": "tax_number",
+                "value": "29ABGCS7802J1ZX"
+              },
+              {
+                "code": "provider_tax_number",
+                "value": "ABGCS7802J"
+              },
+              {
+                "code": "accept_bap_terms",
+                "value": "Y"
+              }
+            ]
+          }
+        ]
+      }
+    }
+  }
+}

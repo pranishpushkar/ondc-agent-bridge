@@ -1,0 +1,53 @@
+{
+  "_meta": {
+    "sent_at": "2026-11-20T19:56:27.864Z",
+    "url": "https://preprod.gateway.ondc.org/search",
+    "http_status": 200,
+    "sync_response": {
+      "message": {
+        "ack": {
+          "status": "ACK"
+        }
+      }
+    }
+  },
+  "payload": {
+    "context": {
+      "domain": "ONDC:RET10",
+      "action": "search",
+      "country": "IND",
+      "city": "std:080",
+      "core_version": "1.2.0",
+      "bap_id": "ondc.pranishpushkar.com",
+      "bap_uri": "https://ondc.pranishpushkar.com",
+      "transaction_id": "4b90e113-b32d-4bb8-9f11-9efaead46688",
+      "message_id": "80864edb-bbf9-4b4e-b555-d2db4ee552d7",
+      "timestamp": "2026-11-20T19:56:27.852Z",
+      "ttl": "PT30S"
+    },
+    "message": {
+      "intent": {
+        "fulfillment": {
+          "type": "Delivery",
+          "end": {
+            "location": {
+              "gps": "12.9352,77.6245",
+              "address": {
+                "area_code": "560034"
+              }
+            }
+          }
+        },
+        "payment": {
+          "@ondc/org/buyer_app_finder_fee_type": "percent",
+          "@ondc/org/buyer_app_finder_fee_amount": "3"
+        },
+        "item": {
+          "descriptor": {
+            "name": "butter"
+          }
+        }
+      }
+    }
+  }
+}

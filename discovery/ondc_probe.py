@@ -17,6 +17,8 @@ Commands
   serve      run only the callback receiver
   search     send /search via the gateway, collect on_search for N seconds
   select     send /select for one item from a captured on_search, collect on_select
+  init       send /init built from a captured on_select, collect on_init
+             (payment and settlement terms; no order is placed)
   analyze    build a contract report (markdown) from the captures
 
 Requirements: Python 3.9+, `pip install cryptography`.
@@ -33,7 +35,9 @@ Before `subscribe` works you need:
     (e.g. a named Cloudflare Tunnel). The same URL then receives callbacks.
 `lookup`, `search` and `select` need a completed subscription.
 
-Not covered on purpose: /init and /confirm (they move toward a real order).
+Not covered on purpose: /confirm (it places a real order). /init is covered:
+it only asks the seller for final terms (payment, settlement, cancellation)
+and creates no order.
 Endpoints, codes and message shapes follow the ONDC retail 1.2.x contract as
 best known; verify them against the current ONDC docs before relying on them.
 """
@@ -374,7 +378,7 @@ class Collector:
         folder = self.captures / safe(txn)
         with self.lock:
             folder.mkdir(parents=True, exist_ok=True)
-            n = len(list(folder.glob(f"{safe(action)}--*.json"))) + 1
+            n = len(list(folder.glob(f"{safe(action)}--{safe(bpp)}--*.json"))) + 1  # per seller
             (folder / f"{safe(action)}--{safe(bpp)}--{n:03d}.json").write_text(
                 json.dumps(record, indent=2, ensure_ascii=False))
             self.received.append(record["_meta"])
@@ -579,6 +583,67 @@ def cmd_select(args: argparse.Namespace) -> None:
         "message": {"order": order},
     }
     collect(args, ctx["bpp_uri"].rstrip("/") + "/select", request)
+
+
+def quoted_count(item: dict[str, Any], order: dict[str, Any], override: int | None) -> int:
+    """Quantity for an item in init. Sellers differ: some repeat it in items[],
+    others only in the quote breakup (@ondc/org/item_quantity)."""
+    if override:
+        return override
+    q = item.get("quantity") or {}
+    if isinstance(q, dict) and q.get("count") is not None:
+        return int(q["count"])
+    for line in (order.get("quote") or {}).get("breakup") or []:
+        if line.get("@ondc/org/item_id") == item.get("id") and line.get("@ondc/org/title_type") == "item":
+            count = (line.get("@ondc/org/item_quantity") or {}).get("count")
+            if count is not None:
+                return int(count)
+    return 1
+
+
+def cmd_init(args: argparse.Namespace) -> None:
+    """Ask the seller for final terms. Built from a captured on_select, so the
+    items and fulfillment match the quote. /init places no order; only /confirm
+    would, and this tool deliberately has no confirm command."""
+    record = json.loads(Path(args.capture).read_text())
+    payload = record.get("payload", record)
+    ctx = payload["context"]
+    if ctx.get("action") != "on_select":
+        sys.exit("error: --capture must be an on_select capture")
+    quoted = (payload.get("message") or {}).get("order") or {}
+    fulfillment = (quoted.get("fulfillments") or [{}])[0]
+    # Shape follows ONDC's example: address.name is the house/door no. (must differ
+    # from locality); billing.name is the buyer; end.contact carries the phone.
+    address = {
+        "name": args.house, "building": args.building, "locality": args.locality,
+        "city": args.city_name, "state": args.state, "country": "IND",
+        "area_code": args.area_code,
+    }
+    contact = {"phone": args.phone}
+    now = now_iso()
+    order = {
+        "provider": quoted.get("provider"),
+        "items": [
+            {"id": i["id"], "quantity": {"count": quoted_count(i, quoted, args.quantity)},
+             "fulfillment_id": i.get("fulfillment_id") or fulfillment.get("id")}
+            for i in quoted.get("items") or []
+        ],
+        "billing": {"name": args.name, "address": address, "email": args.email,
+                    "phone": args.phone, "created_at": now, "updated_at": now},
+        "fulfillments": [{
+            "id": fulfillment.get("id", "1"),
+            "type": fulfillment.get("type", "Delivery"),
+            "end": {"location": {"gps": args.gps, "address": address}, "contact": contact},
+        }],
+        # No payment block: per ONDC's RET10 1.2.0 example the buyer app sends none
+        # at init; the seller proposes payment and settlement terms in on_init.
+    }
+    request = {
+        "context": context(args, "init", ctx["transaction_id"], ctx["bpp_id"], ctx["bpp_uri"]),
+        "message": {"order": order},
+    }
+    print("  (init asks for terms only; no order is placed)")
+    collect(args, ctx["bpp_uri"].rstrip("/") + "/init", request)
 
 
 def cmd_serve(args: argparse.Namespace) -> None:
@@ -910,6 +975,20 @@ def main() -> None:
     p.add_argument("--item", required=True)
     p.add_argument("--quantity", type=int, default=1)
     p.set_defaults(func=cmd_select)
+
+    p = sub.add_parser("init", help="send /init from a captured on_select (no order placed)")
+    network(p)
+    p.add_argument("--capture", required=True, help="path to an on_select capture file")
+    p.add_argument("--name", default="Test Buyer", help="test buyer name")
+    p.add_argument("--phone", default="9886098860", help="test buyer phone (ONDC's sample value)")
+    p.add_argument("--email", default="nobody@nomail.com", help="test buyer email (ONDC's sample value)")
+    p.add_argument("--quantity", type=int, help="override the quantity taken from the quote")
+    p.add_argument("--house", default="Flat 101", help="house or door number")
+    p.add_argument("--building", default="Test Building")
+    p.add_argument("--locality", default="Koramangala")
+    p.add_argument("--city-name", default="Bengaluru")
+    p.add_argument("--state", default="Karnataka")
+    p.set_defaults(func=cmd_init)
 
     p = sub.add_parser("serve", help="run only the callback receiver")
     common(p)
