@@ -1,0 +1,53 @@
+{
+  "_meta": {
+    "sent_at": "2026-11-20T19:33:27.368Z",
+    "url": "https://preprod.gateway.ondc.org/search",
+    "http_status": 200,
+    "sync_response": {
+      "message": {
+        "ack": {
+          "status": "ACK"
+        }
+      }
+    }
+  },
+  "payload": {
+    "context": {
+      "domain": "ONDC:RET10",
+      "action": "search",
+      "country": "IND",
+      "city": "std:080",
+      "core_version": "1.2.0",
+      "bap_id": "ondc.pranishpushkar.com",
+      "bap_uri": "https://ondc.pranishpushkar.com",
+      "transaction_id": "6feaf0ed-3b6b-4bb3-85ed-931833fb3553",
+      "message_id": "58d79f87-d22d-435f-8173-87c7727c427f",
+      "timestamp": "2026-11-20T19:33:27.356Z",
+      "ttl": "PT30S"
+    },
+    "message": {
+      "intent": {
+        "fulfillment": {
+          "type": "Delivery",
+          "end": {
+            "location": {
+              "gps": "12.9716,77.5946",
+              "address": {
+                "area_code": "560001"
+              }
+            }
+          }
+        },
+        "payment": {
+          "@ondc/org/buyer_app_finder_fee_type": "percent",
+          "@ondc/org/buyer_app_finder_fee_amount": "3"
+        },
+        "item": {
+          "descriptor": {
+            "name": "milk"
+          }
+        }
+      }
+    }
+  }
+}

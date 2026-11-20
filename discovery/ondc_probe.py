@@ -21,7 +21,11 @@ Commands
 
 Requirements: Python 3.9+, `pip install cryptography`.
 
-Environments: --env preprod (default) or staging; or set ONDC_ENV.
+Environment: ONDC pre-prod (staging has been retired by ONDC).
+
+Keys: pass the portal's key file with --keys ~/Downloads/keys.json (or set
+ONDC_KEYS_FILE); it supplies the signing/encryption keys, subscriber_id, ukid
+and callback URL.
 
 Before `subscribe` works you need:
   * your subscriber_id (a domain you control) whitelisted on the ONDC portal, and
@@ -37,6 +41,7 @@ from __future__ import annotations
 
 import argparse
 import base64
+import gzip
 import hashlib
 import json
 import os
@@ -65,22 +70,16 @@ from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 
 # ---------------------------------------------------------------- config ---
 
-# URLs and ONDC's encryption public keys per environment, from ONDC's
-# developer docs (github.com/ONDC-Official/developer-docs). Verify if they change.
+# URLs and ONDC's encryption public key per environment, from ONDC's developer
+# docs (github.com/ONDC-Official/developer-docs, registry onboarding guide).
+# ONDC has retired staging; pre-prod is the only non-production environment.
 ENVS = {
-    "staging": {
-        "registry": "https://staging.registry.ondc.org",
-        "gateway": "https://staging.gateway.proteantech.in",
-        "subscribe_path": "/subscribe",
-        "legacy_lookup_path": "/lookup",
-        "ondc_public_key": "MCowBQYDK2VuAyEAduMuZgmtpjdCuxv+Nc49K0cB6tL/Dj3HZetvVN7ZekM=",
-    },
     "preprod": {
         "registry": "https://preprod.registry.ondc.org",
         "gateway": "https://preprod.gateway.ondc.org",
         "subscribe_path": "/ondc/subscribe",
         "legacy_lookup_path": "/ondc/lookup",
-        "ondc_public_key": "MCowBQYDK2VuAyEAa9Wbpvd9SsrpOZFcynyt/TO3x0Yrqyys4NUGIvyxX2Q=",
+        "ondc_public_key": "MCowBQYDK2VuAyEARa/WcMCzNQp4DWjvTI4DK7vHL6EdaHqN4GjFIu9wxxM=",
     },
 }
 
@@ -118,6 +117,30 @@ def env_conf(args: argparse.Namespace) -> dict[str, str]:
     return conf
 
 
+def load_keys_file(args: argparse.Namespace) -> None:
+    """Fill ONDC_* settings from the key file the ONDC portal issues (keys.json),
+    given with --keys or ONDC_KEYS_FILE. Explicit env vars and flags still win."""
+    path = getattr(args, "keys", None) or os.environ.get("ONDC_KEYS_FILE")
+    if not path or getattr(args, "_keys_loaded", False):
+        return
+    try:
+        data = json.loads(Path(path).expanduser().read_text())
+    except (OSError, json.JSONDecodeError) as err:
+        sys.exit(f"error: cannot read key file {path}: {err}")
+    urls = data.get("subscriber_urls") or [{}]
+    mapping = {
+        "ONDC_SIGNING_PRIVATE_KEY": data.get("signing_private_key"),
+        "ONDC_ENCRYPTION_PRIVATE_KEY": data.get("encryption_private_key"),
+        "ONDC_SUBSCRIBER_ID": data.get("subscriber_id"),
+        "ONDC_UNIQUE_KEY_ID": data.get("ukid"),
+        "ONDC_BAP_URI": (urls[0].get("subscriber_url") or "").rstrip("/") or None,
+    }
+    for name, value in mapping.items():
+        if value and not os.environ.get(name):
+            os.environ[name] = value
+    args._keys_loaded = True
+
+
 class Signer:
     """This buyer app's signing identity, if configured."""
 
@@ -129,6 +152,7 @@ class Signer:
 
     @classmethod
     def from_env(cls, args: argparse.Namespace, required: bool = True) -> "Signer | None":
+        load_keys_file(args)
         names = ("ONDC_SIGNING_PRIVATE_KEY", "ONDC_SUBSCRIBER_ID", "ONDC_UNIQUE_KEY_ID")
         values = [cfg(n, getattr(args, a, None)) for n, a in
                   zip(names, ("private_key", "subscriber_id", "unique_key_id"))]
@@ -298,12 +322,20 @@ class Collector:
         self.lock = threading.Lock()
         self.received: list[dict[str, Any]] = []
 
-    def store(self, path: str, headers: dict[str, str], body: bytes) -> None:
+    def store(self, path: str, headers: dict[str, str], raw_body: bytes) -> None:
         received_at = now_iso()
+        encoding = headers.get("content-encoding", "").lower()
+        body = raw_body
+        if "gzip" in encoding or raw_body[:2] == b"\x1f\x8b":
+            try:
+                body = gzip.decompress(raw_body)
+                encoding = encoding or "gzip (detected)"
+            except OSError:
+                body = raw_body
         try:
-            payload = json.loads(body)
-        except json.JSONDecodeError:
-            payload = {"_unparseable": body.decode(errors="replace")}
+            payload = json.loads(body.decode("utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError):
+            payload = {"_unparseable_base64": base64.b64encode(raw_body).decode()}
         ctx = (payload.get("context") or {}) if isinstance(payload, dict) else {}
         action = ctx.get("action") or path.strip("/").replace("/", "_") or "unknown"
         txn = ctx.get("transaction_id") or "no-transaction"
@@ -315,7 +347,13 @@ class Collector:
             sub, _, rest = parse_auth_header(auth).get("keyId", "").partition("|")
             ukid = rest.split("|")[0] if rest else ""
             key = self.registry.signing_key(sub, ukid)
-            verification = verify_auth(auth, body, key)[1] if key else "key not found in registry"
+            if not key:
+                verification = "key not found in registry"
+            else:
+                ok, verification = verify_auth(auth, body, key)
+                if not ok and body is not raw_body:  # signed over the compressed bytes?
+                    ok2, why2 = verify_auth(auth, raw_body, key)
+                    verification = f"{why2} (over compressed body)" if ok2 else verification
         elif not auth:
             verification = "no Authorization header"
 
@@ -326,8 +364,10 @@ class Collector:
                 "action": action,
                 "bpp_id": bpp,
                 "signature": verification,
+                "content_encoding": encoding or None,
                 "headers": {k: v for k, v in headers.items()
-                            if k in ("authorization", "x-gateway-authorization", "content-type")},
+                            if k in ("authorization", "x-gateway-authorization", "content-type",
+                                     "content-encoding", "user-agent")},
             },
             "payload": payload,
         }
@@ -408,7 +448,10 @@ def start_server(collector: Collector | None, port: int,
                 return
             if collector:
                 headers = {k.lower(): v for k, v in self.headers.items()}
-                collector.store(self.path, headers, body)
+                try:
+                    collector.store(self.path, headers, body)
+                except Exception as err:  # noqa: BLE001 - keep receiving, record the problem
+                    print(f"  <- callback on {self.path} could not be stored: {err}")
             self.reply(200, dump({"message": {"ack": {"status": "ACK"}}}))
 
         def do_GET(self) -> None:  # noqa: N802
@@ -432,6 +475,7 @@ def start_server(collector: Collector | None, port: int,
 
 def context(args: argparse.Namespace, action: str, transaction_id: str | None = None,
             bpp_id: str | None = None, bpp_uri: str | None = None) -> dict[str, Any]:
+    load_keys_file(args)
     ctx = {
         "domain": cfg("ONDC_DOMAIN", args.domain),
         "action": action,
@@ -829,12 +873,13 @@ def main() -> None:
     sub = parser.add_subparsers(dest="command", required=True)
 
     def identity(p: argparse.ArgumentParser) -> None:
+        p.add_argument("--keys", help="key file from the ONDC portal (or set ONDC_KEYS_FILE)")
         p.add_argument("--subscriber-id")
         p.add_argument("--unique-key-id")
         p.add_argument("--private-key", help="base64 Ed25519 signing key (prefer the env var)")
 
     def common(p: argparse.ArgumentParser) -> None:
-        p.add_argument("--env", choices=sorted(ENVS), help="ONDC environment (default preprod)")
+        p.add_argument("--env", choices=sorted(ENVS), help="ONDC environment (only preprod)")
         p.add_argument("--captures", help="captures folder (default ./captures)")
         p.add_argument("--registry", help="registry base URL (overrides --env)")
         p.add_argument("--domain", help="e.g. ONDC:RET10")
