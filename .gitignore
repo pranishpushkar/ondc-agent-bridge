@@ -21,3 +21,6 @@ out/
 
 # ONDC subscribe config (holds PAN/GST details)
 subscribe-config*.json
+
+# Local research notes (not tracked)
+research/
