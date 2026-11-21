@@ -167,3 +167,26 @@ After these fixes: **OrderBazaar and Costbo returned `on_init`; Lekhha never did
 - Probe ONDC's reference seller and Pramaan mocks directly.
 - Draft the shared internal model (`Offer`, `Quote`, `QuoteLine`, `Store`, `Serviceability`) from §5 and §6.
 - Decide how the bridge will collect and settle payments (§7) before designing checkout.
+
+## 10. Prod spot check (Mystore buyer app, 21 Nov 2026)
+
+Pre-prod can't tell us how prod sellers behave, so we checked a live ONDC buyer app by hand. Mystore was used because Paytm has removed its ONDC shopping entry. Delivery address: Koramangala, Bengaluru. Nothing was paid for.
+
+| Check | Result |
+|---|---|
+| Search "milk" | 50 products from 266 sellers |
+| Search "atta" | 67 sellers |
+| Relevance | Results matched the query (milk was milk) |
+| Seller mix | Many different sellers, some local and some far away |
+| Delivery | Many sellers could deliver to the address, some could not |
+| Checkout | Item price stayed the same; shipping, packaging and taxes were added at checkout |
+
+What this means:
+
+- The 3-of-394 response rate in §3 is a pre-prod artefact, not a forecast for prod. Seller coverage in prod looks adequate for the 20-reliable-seller gate.
+- Reliability at quote, final terms and order is still unmeasured in prod. Run the census in prod once subscribed.
+- The Rs 80 to Rs 280 jump in §6 looks like a pre-prod quirk. In prod, the total grew only through fee lines in the breakup.
+- Budget checks must use the full total including delivery, packing and tax, and the bridge should return the fee breakup to the agent.
+- Delivery-area filtering is required: not every seller in the results can deliver to the address.
+- Mystore may filter and rank results itself, so raw seller responses through the bridge could be noisier than the app shows.
+- Still to do: repeat at a different time of day (late night, early morning) and test a third item.
