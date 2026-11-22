@@ -1,6 +1,7 @@
 # Discovery findings: ONDC pre-prod, first contact
 
-**Date:** 21 Nov 2026
+**Date:** 21 Nov 2026 (decision added 22 Nov 2026)
+**Status:** Parked. See §11 for why.
 **Environment:** ONDC pre-prod (staging has been retired by ONDC)
 **Buyer app:** `ondc.pranishpushkar.com`, domain ONDC:RET10 (grocery) and RET11–RET15, cities Bengaluru (`std:080`) and Hyderabad (`std:040`)
 **Tool:** [`discovery/ondc_probe.py`](../discovery/ondc_probe.py)
@@ -190,3 +191,27 @@ What this means:
 - Delivery-area filtering is required: not every seller in the results can deliver to the address.
 - Mystore may filter and rank results itself, so raw seller responses through the bridge could be noisier than the app shows.
 - Still to do: repeat at a different time of day (late night, early morning) and test a third item.
+
+## 11. Decision: parked (22 Nov 2026)
+
+We are not building the bridge for now. The technical path works; the reason to use it does not.
+
+**Deciding evidence: ONDC grocery has no edge over quick commerce.** In the same prod spot check (§10), ONDC sellers listed products at the same prices as Zepto and Blinkit, charged more for delivery and took longer to deliver. An AI agent acting for a user would pick Zepto or Blinkit every time, and both already expose their own MCP servers. A bridge to ONDC grocery would connect agents to the second-best option.
+
+**Other options considered and rejected:**
+
+| Option | Why it doesn't work |
+|---|---|
+| Smaller cities, where quick commerce is absent | AI agent users are concentrated in metros, where quick commerce already wins |
+| Items quick commerce doesn't stock | Real but too small and hard to search to build a product on |
+| Mobility or restaurants | Untested; agents booking rides is an even earlier market. Not enough evidence to justify building |
+
+**Supporting signals:** ONDC retail order volume has been falling, and Paytm has removed its ONDC shopping entry.
+
+**What would make us revisit:**
+- ONDC sellers become clearly cheaper or faster than quick commerce in a metro category
+- Agent builders ask specifically for ONDC sellers
+- ONDC announces an official AI agent or MCP programme
+
+**What we keep:** the probe (`discovery/ondc_probe.py`), the captures and this document. They cover registration, signed registry lookups, gzip callbacks, quote and final-terms contracts, and the undocumented seller rules, and they remain valid if the project is revived.
+
